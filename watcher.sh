@@ -5,18 +5,27 @@ DEPLOYMENT=swype-app
 MAX_RESTARTS=5
 SECONDS_BETWEEN_CHECKS=60
 
+TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
+echo "$TIMESTAMP: Starting restart monitor for ${DEPLOYMENT} in namespace ${NAMESPACE}"
+
 while true; do 
-    RESTARTS=$(kubectl get pods -n ${NAMESPACE} -l app=${DEPLOYMENT} -o jsonpath="{.items[0].status.containerStatuses[0].restartCount}")
+    TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
+    RUNNING_PODS=$(kubectl get pods -n ${NAMESPACE} -l app=${DEPLOYMENT} -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}')
 
-    if [ -z "$RESTARTS" ]; then
-        echo "No pods found or unable to fetch restart count."
+    if [ -z "$RUNNING_PODS" ]; then
+        echo "${TIMESTAMP}: No running pods found for ${DEPLOYMENT}."
     else
-        echo "Current number of restarts = ${RESTARTS}"
+        RESTARTS=$(kubectl get pod $(echo $RUNNING_PODS | awk '{print $1}') -n ${NAMESPACE} -o jsonpath='{.status.containerStatuses[0].restartCount}')
+        if [ -z "$RESTARTS" ]; then
+            echo "${TIMESTAMP}: Unable to fetch restart count."
+        else
+            echo "${TIMESTAMP}: Current number of restarts = ${RESTARTS}"
 
-        if (( RESTARTS > MAX_RESTARTS )); then
-            echo "Maximum Restarts Exceeded (${MAX_RESTARTS}). Shutting down the ${DEPLOYMENT} service."
-            kubectl scale --replicas=0 deployment/${DEPLOYMENT} -n ${NAMESPACE}
-            break 
+            if (( RESTARTS > MAX_RESTARTS )); then
+                echo "${TIMESTAMP}S: Maximum Restarts Exceeded (${MAX_RESTARTS}). Shutting down the ${DEPLOYMENT} service."
+                kubectl scale --replicas=0 deployment/${DEPLOYMENT} -n ${NAMESPACE}
+               break 
+            fi
         fi
     fi
 
